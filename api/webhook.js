@@ -131,9 +131,24 @@ async function handlePhoto(chatId, message) {
     if (isLate) {
         status = 'late';
         reason = 'Terlambat';
-    } else if (aiResult && !aiResult.error && !aiResult.isSafe) {
-        status = 'invalid';
-        reason = 'Konten tidak aman';
+    } else if (aiResult && !aiResult.error) {
+        // Stricter AI validation
+        if (!aiResult.isSafe) {
+            status = 'invalid';
+            reason = 'Konten tidak aman';
+        } else if (!aiResult.hasBottle) {
+            status = 'invalid';
+            reason = 'Tidak terlihat botol minum. Foto harus ada botol/gelas minum 🥤';
+        } else if (!aiResult.hasFace) {
+            status = 'invalid';
+            reason = 'Tidak terlihat wajah. Foto harus selfie dengan minuman 🤳';
+        } else if (!aiResult.gestureMatch && aiResult.confidence > 70) {
+            status = 'invalid';
+            reason = `Gesture tidak sesuai. Seharusnya: ${ev.gesture}`;
+        } else if (!aiResult.isRealPhoto && aiResult.confidence > 80) {
+            status = 'invalid';
+            reason = 'Foto terdeteksi bukan asli (screenshot/editan)';
+        }
     }
 
     await updateEvent(ev.id, {

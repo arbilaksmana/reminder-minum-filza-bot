@@ -1,9 +1,8 @@
-import { getActiveUsers, createEvent } from '../../lib/supabase.js';
-import { sendMessage, getRandomCode, getRandomGesture } from '../../lib/telegram.js';
+const { getActiveUsers, createEvent } = require('../../lib/supabase');
+const { sendMessage, getRandomCode, getRandomGesture } = require('../../lib/telegram');
 
-// Runs at 08:00, 14:00, 20:00 WIB (01:00, 07:00, 13:00 UTC)
-export default async function handler(req, res) {
-    console.log('Schedule cron triggered at:', new Date().toISOString());
+module.exports = async function handler(req, res) {
+    console.log('Schedule cron triggered');
 
     try {
         const users = await getActiveUsers();
@@ -15,7 +14,6 @@ export default async function handler(req, res) {
             const code = getRandomCode();
             const gesture = getRandomGesture();
 
-            // Create event in database
             const event = await createEvent({
                 tg_id: user.tg_id,
                 challenge_code: code,
@@ -24,41 +22,17 @@ export default async function handler(req, res) {
                 next_reminder_at: new Date().toISOString()
             });
 
-            if (!event) {
-                console.error(`Failed to create event for user ${user.tg_id}`);
-                continue;
-            }
+            if (!event) continue;
 
-            // Send reminder message
-            const msg = [
-                '💧 <b>Waktunya minum!</b>',
-                '',
-                `Kode: <b>${code}</b>`,
-                `Pose/Gesture: <b>${gesture}</b>`,
-                `Deadline: 20 menit dari sekarang`,
-                '',
-                'Kirim <b>FOTO</b> + tulis kode di caption ya 😊'
-            ].join('\n');
+            const msg = `💧 <b>Waktunya minum!</b>\n\nKode: <b>${code}</b>\nPose/Gesture: <b>${gesture}</b>\nDeadline: 20 menit\n\nKirim <b>FOTO</b> + tulis kode di caption ya 😊`;
 
-            const sent = await sendMessage(user.tg_id, msg);
-            results.push({
-                user: user.tg_id,
-                code,
-                sent: sent.ok
-            });
-
-            console.log(`Reminder sent to ${user.tg_id}: code=${code}`);
+            await sendMessage(user.tg_id, msg);
+            results.push({ user: user.tg_id, code });
         }
 
-        res.status(200).json({
-            ok: true,
-            timestamp: new Date().toISOString(),
-            usersNotified: results.length,
-            results
-        });
-
+        res.status(200).json({ ok: true, results });
     } catch (error) {
         console.error('Schedule error:', error);
         res.status(500).json({ ok: false, error: error.message });
     }
-}
+};

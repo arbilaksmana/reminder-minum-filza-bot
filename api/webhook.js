@@ -1,10 +1,10 @@
-import crypto from 'crypto';
-import { sendMessage, downloadFile, notifyAdmin, getRandomCode, getRandomGesture } from '../lib/telegram.js';
-import { upsertUser, getPendingEvent, updateEvent, createEvent, isHashExists, saveHash } from '../lib/supabase.js';
-import { uploadToDrive } from '../lib/drive.js';
-import { validatePhoto } from '../lib/gemini.js';
+const crypto = require('crypto');
+const { sendMessage, downloadFile, notifyAdmin, getRandomCode, getRandomGesture } = require('../lib/telegram');
+const { upsertUser, getPendingEvent, updateEvent, createEvent, isHashExists, saveHash } = require('../lib/supabase');
+const { uploadToDrive } = require('../lib/drive');
+const { validatePhoto } = require('../lib/gemini');
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(200).json({ ok: true, message: 'Webhook is active' });
     }
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
         console.error('Webhook error:', error);
         res.status(200).json({ ok: true, error: error.message });
     }
-}
+};
 
 async function handleText(chatId, text, from) {
     if (text === '/start') {
@@ -44,7 +44,6 @@ async function handleText(chatId, text, from) {
     }
 
     if (text === '/test') {
-        // Manual test - create a reminder
         const code = getRandomCode();
         const gesture = getRandomGesture();
         await createEvent({
@@ -78,13 +77,11 @@ async function handlePhoto(chatId, message) {
     const caption = (message.caption || '').trim();
     console.log(`Caption: "${caption}", Expected: "${ev.challenge_code}"`);
 
-    // Check caption contains code
     if (!caption || !caption.includes(ev.challenge_code)) {
         await sendMessage(chatId, `❌ Tulis kode <b>${ev.challenge_code}</b> di caption! Coba lagi ya 🙏`);
         return;
     }
 
-    // Download photo
     const photos = message.photo;
     const largest = photos[photos.length - 1];
 
@@ -98,14 +95,12 @@ async function handlePhoto(chatId, message) {
         return;
     }
 
-    // Check duplicate hash
     const hash = crypto.createHash('sha256').update(photoBuffer).digest('hex');
     if (await isHashExists(hash)) {
         await sendMessage(chatId, '❌ Foto ini sudah pernah dikirim. Kirim foto BARU ya 🙏');
         return;
     }
 
-    // Upload to Google Drive
     let driveResult;
     try {
         driveResult = await uploadToDrive(photoBuffer, `${ev.id}.jpg`);
@@ -116,42 +111,31 @@ async function handlePhoto(chatId, message) {
         return;
     }
 
-    // Save hash
     await saveHash(hash, driveResult.fileId);
 
-    // AI Validation with Gemini
     let aiResult = null;
     try {
         aiResult = await validatePhoto(photoBuffer, ev.gesture);
         console.log('AI validation:', aiResult);
     } catch (err) {
-        console.error('AI validation error:', err);
-        // Continue even if AI fails
+        console.error('AI error:', err);
     }
 
-    // Check deadline
     const createdAt = new Date(ev.created_at).getTime();
     const deadlineAt = createdAt + (ev.deadline_minutes * 60 * 1000);
     const isLate = Date.now() > deadlineAt;
 
-    // Determine status
     let status = 'valid';
     let reason = 'ok';
 
     if (isLate) {
         status = 'late';
-        reason = 'Terlambat merespon';
-    } else if (aiResult && !aiResult.error) {
-        if (!aiResult.isSafe) {
-            status = 'invalid';
-            reason = 'Konten tidak aman';
-        } else if (!aiResult.hasBottle && !aiResult.isDrinking) {
-            // Warning but still accept
-            reason = 'Tidak terdeteksi minuman (tetap diterima)';
-        }
+        reason = 'Terlambat';
+    } else if (aiResult && !aiResult.error && !aiResult.isSafe) {
+        status = 'invalid';
+        reason = 'Konten tidak aman';
     }
 
-    // Update event
     await updateEvent(ev.id, {
         status,
         photo_url: driveResult.url,
@@ -160,7 +144,6 @@ async function handlePhoto(chatId, message) {
         responded_at: new Date().toISOString()
     });
 
-    // Send response
     if (status === 'valid') {
         await sendMessage(chatId, '✅ Mantap! Minumnya tercatat 💧');
         await notifyAdmin(`✅ <b>VALID</b>\nUser: ${chatId}\nKode: ${ev.challenge_code}\nFoto: ${driveResult.url}`);
@@ -169,8 +152,5 @@ async function handlePhoto(chatId, message) {
         await notifyAdmin(`⚠️ <b>LATE</b>\nUser: ${chatId}\nFoto: ${driveResult.url}`);
     } else {
         await sendMessage(chatId, `❌ ${reason}. Coba lagi ya 🙏`);
-        await notifyAdmin(`❌ <b>INVALID</b>\nUser: ${chatId}\nReason: ${reason}`);
     }
-
-    console.log(`Event ${ev.id} completed with status: ${status}`);
 }

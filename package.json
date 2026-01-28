@@ -2,7 +2,6 @@
     "name": "reminder-minum-bot",
     "version": "1.0.0",
     "description": "Telegram bot for water drinking reminders with AI validation",
-    "type": "module",
     "scripts": {
         "dev": "vercel dev",
         "deploy": "vercel --prod"
